@@ -1,0 +1,25 @@
+import torch
+from models import RetiScanUNet, GradCAM
+
+
+def main():
+    model = RetiScanUNet(num_classes=3, pretrained_encoder=False)  
+    model.eval()
+
+    dummy_input = torch.randn(1, 3, 256, 256)  
+        logits = model(dummy_input)
+
+    print(f"Input shape:  {tuple(dummy_input.shape)}")
+    print(f"Output shape: {tuple(logits.shape)}  (expected: (1, 3, 256, 256))")
+    assert logits.shape == (1, 3, 256, 256), "Output shape mismatch -- check encoder/decoder channel wiring."
+    model.train()
+    cam = GradCAM(model, target_layer=model.encoder.layer4)
+    heatmap = cam.generate(dummy_input, class_idx=1) 
+    print(f"Grad-CAM heatmap shape: {tuple(heatmap.shape)}  (expected: (256, 256))")
+    assert heatmap.shape == (256, 256), "Grad-CAM output shape mismatch."
+
+    print("\nArchitecture check passed.")
+
+
+if __name__ == "__main__":
+    main()
