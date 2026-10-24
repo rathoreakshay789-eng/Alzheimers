@@ -1,0 +1,35 @@
+import torch
+import torch.nn as nn
+
+from .resnet_encoder import ResNet34Encoder
+from .unet_decoder import UNetDecoder
+
+
+class RetiScanUNet(nn.Module):
+    def __init__(self, num_classes: int = 3, pretrained_encoder: bool = True,
+                 decoder_channels=(256, 128, 64, 32, 16)):
+        super().__init__()
+        self.encoder = ResNet34Encoder(pretrained=pretrained_encoder)
+        self.decoder = UNetDecoder(self.encoder.out_channels, decoder_channels)
+        self.segmentation_head = nn.Conv2d(decoder_channels[-1], num_classes, kernel_size=1)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        features = self.encoder(x)
+        decoded = self.decoder(features)
+        logits = self.segmentation_head(decoded)
+        return logits
+
+    def load_pretrained_stage0(self, checkpoint_path: str, map_location="cpu"):
+        state_dict = torch.load(checkpoint_path, map_location=map_location)
+        own_state = self.state_dict()
+
+        matched = {
+            k: v for k, v in state_dict.items()
+            if k in own_state and own_state[k].shape == v.shape
+        }
+        own_state.update(matched)
+        self.load_state_dict(own_state)
+
+        skipped = set(state_dict.keys()) - set(matched.keys())
+        if skipped:
+            print(f"Skipped {len(skipped)} mismatched key(s) (expected for segmentation_head): {sorted(skipped)}")
