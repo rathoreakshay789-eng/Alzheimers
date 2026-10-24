@@ -1,0 +1,53 @@
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+
+
+class DecoderBlock(nn.Module):
+    def __init__(self, in_channels: int, skip_channels: int, out_channels: int):
+        super().__init__()
+        self.upsample = nn.Upsample(scale_factor=2, mode="bilinear", align_corners=False)
+
+        conv_in = in_channels + skip_channels
+        self.conv1 = nn.Sequential(
+            nn.Conv2d(conv_in, out_channels, kernel_size=3, padding=1, bias=False),
+            nn.BatchNorm2d(out_channels),
+            nn.ReLU(inplace=True),
+        )
+        self.conv2 = nn.Sequential(
+            nn.Conv2d(out_channels, out_channels, kernel_size=3, padding=1, bias=False),
+            nn.BatchNorm2d(out_channels),
+            nn.ReLU(inplace=True),
+        )
+
+    def forward(self, x, skip=None):
+        x = self.upsample(x)
+        if skip is not None:
+            if x.shape[-2:] != skip.shape[-2:]:
+                x = F.interpolate(x, size=skip.shape[-2:], mode="bilinear", align_corners=False)
+            x = torch.cat([x, skip], dim=1)
+        x = self.conv1(x)
+        x = self.conv2(x)
+        return x
+
+
+class UNetDecoder(nn.Module):
+    def __init__(self, encoder_channels, decoder_channels=(256, 128, 64, 32, 16)):
+        super().__init__()
+        feat0_ch, feat1_ch, feat2_ch, feat3_ch, feat4_ch = encoder_channels
+        in_chs = [feat4_ch, decoder_channels[0], decoder_channels[1], decoder_channels[2], decoder_channels[3]]
+        skip_chs = [feat3_ch, feat2_ch, feat1_ch, feat0_ch, 0]
+        out_chs = list(decoder_channels)
+
+        self.blocks = nn.ModuleList([
+            DecoderBlock(in_chs[i], skip_chs[i], out_chs[i]) for i in range(5)
+        ])
+
+    def forward(self, features):
+        feat0, feat1, feat2, feat3, feat4 = features
+        skips = [feat3, feat2, feat1, feat0, None]
+
+        x = feat4
+        for block, skip in zip(self.blocks, skips):
+            x = block(x, skip)
+        return x  # full input resolution, decoder_channels[-1] channels
