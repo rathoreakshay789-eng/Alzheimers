@@ -1,0 +1,27 @@
+import torch.nn as nn
+import torchvision.models as tv_models
+
+
+class ResNet34Encoder(nn.Module):
+    out_channels = [64, 64, 128, 256, 512]
+
+    def __init__(self, pretrained: bool = True):
+        super().__init__()
+        weights = tv_models.ResNet34_Weights.IMAGENET1K_V1 if pretrained else None
+        resnet = tv_models.resnet34(weights=weights)
+        self.stem = nn.Sequential(resnet.conv1, resnet.bn1, resnet.relu)
+        self.maxpool = resnet.maxpool
+
+        self.layer1 = resnet.layer1
+        self.layer2 = resnet.layer2
+        self.layer3 = resnet.layer3
+        self.layer4 = resnet.layer4
+
+    def forward(self, x):
+        feat0 = self.stem(x)               
+        x = self.maxpool(feat0)
+        feat1 = self.layer1(x)             
+        feat2 = self.layer2(feat1)         
+        feat3 = self.layer3(feat2)         
+        feat4 = self.layer4(feat3)          
+        return [feat0, feat1, feat2, feat3, feat4]
